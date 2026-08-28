@@ -9,6 +9,9 @@
 .order-name { margin-bottom: 22px; }
 .hint { margin: -14px 0 25px; color: #778299; font-size: 11px; }
 .order-actions { display: flex; gap: 10px; margin: -10px 0 16px; }
+.calculation-actions { display: grid; gap: 6px; margin: 0 0 22px; }
+.calculate { border: 0; border-radius: 8px; padding: 10px 12px; color: #fff; background: #5263bd; font: 700 13px inherit; cursor: pointer; }
+.calculation-actions span { color: #be5131; font-size: 11px; font-weight: 700; }
 .secondary:disabled { cursor: not-allowed; opacity: .5; }
 .new-order { border: 0; padding: 8px 0; color: #6574c8; background: transparent; font: 700 12px inherit; cursor: pointer; }
 .saved-orders { margin-bottom: 22px; }

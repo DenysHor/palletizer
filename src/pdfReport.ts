@@ -10,7 +10,6 @@ type ReportData = {
   pallet: Pallet
   boxes: BoxType[]
   pallets: PalletLoad[]
-  totalPlaced: number
   totalWeight: number
   captures: string[]
 }
@@ -48,7 +47,7 @@ function drawImageContain(context: Context, image: HTMLImageElement, x: number, 
   context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight)
 }
 
-function formatWeight(weight: number) { return `${Number.isInteger(weight) ? weight : weight.toFixed(1)} кг` }
+function formatWeight(weight: number) { return `${Math.round((weight + Number.EPSILON) * 100) / 100} кг` }
 function formatVolume(volumeMm3: number) { return `${(volumeMm3 / 1_000_000_000).toFixed(3)} м³` }
 function placementVolume(placement: Placement) { return placement.size[0] * placement.size[1] * placement.size[2] }
 function fillPercentage(load: PalletLoad, pallet: Pallet) {
@@ -116,7 +115,7 @@ function orderSummaryPage(data: ReportData) {
   text(context, data.orderName || 'Замовлення без назви', page.margin, 105, 36, 700)
   text(context, 'Загальні дані замовлення', page.margin, 168, 28, 700)
   drawMetric(context, page.margin, 195, 245, 'УСЬОГО КОРОБОК', `${requestedBoxes} шт.`)
-  drawMetric(context, page.margin + 270, 195, 245, 'РОЗМІЩЕНО', `${data.totalPlaced} шт.`)
+  drawMetric(context, page.margin + 270, 195, 245, 'ОБʼЄМ КОРОБОК', formatVolume(requestedVolume))
   drawMetric(context, page.margin + 540, 195, 245, 'ПАЛЕТ ПОТРІБНО', `${data.pallets.length} шт.`)
   drawMetric(context, page.margin + 810, 195, 245, 'ВАГА КОРОБОК', formatWeight(requestedWeight))
   drawMetric(context, page.margin + 1080, 195, 245, 'ВАГА З ПАЛЕТАМИ', formatWeight(data.totalWeight + palletsWeight))
