@@ -1,6 +1,7 @@
 import type { BoxResult, BoxType, Pallet, Placement } from './types'
 
-export type Calculation = { placements: Placement[]; results: BoxResult[]; usedHeight: number; totalWeight: number }
+export type PalletLoad = { placements: Placement[]; usedHeight: number; totalWeight: number }
+export type Calculation = { pallets: PalletLoad[]; results: BoxResult[]; totalPlaced: number; totalWeight: number }
 
 const valid = (value: number) => Number.isFinite(value) && value > 0
 
@@ -12,12 +13,13 @@ const valid = (value: number) => Number.isFinite(value) && value > 0
  */
 export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculation {
   if (![pallet.length, pallet.width, pallet.maxHeight].every(valid)) {
-    return { placements: [], results: [], usedHeight: 0, totalWeight: 0 }
+    return { pallets: [], results: [], totalPlaced: 0, totalWeight: 0 }
   }
 
-  const placements: Placement[] = []
+  const pallets: PalletLoad[] = []
   const results: BoxResult[] = []
-  let z = 0
+  let current: PalletLoad = { placements: [], usedHeight: 0, totalWeight: 0 }
+  let totalPlaced = 0
   let totalWeight = 0
 
   for (const box of boxTypes) {
@@ -30,22 +32,32 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
     }, { ...options[0], capacity: 0 })
 
     let placed = 0
-    while (z + box.height <= pallet.maxHeight && placed < box.quantity && chosen.capacity > 0) {
+    while (placed < box.quantity && chosen.capacity > 0) {
+      if (current.usedHeight + box.height > pallet.maxHeight) {
+        // A box taller than the allowed load cannot be placed even on an empty pallet.
+        if (current.placements.length === 0) break
+        pallets.push(current)
+        current = { placements: [], usedHeight: 0, totalWeight: 0 }
+        continue
+      }
       const inLayer = Math.min(chosen.capacity, box.quantity - placed)
       for (let index = 0; index < inLayer; index += 1) {
         const column = index % Math.floor(pallet.length / chosen.length)
         const row = Math.floor(index / Math.floor(pallet.length / chosen.length))
-        placements.push({
+        current.placements.push({
           boxId: box.id,
-          position: [column * chosen.length + chosen.length / 2, z + box.height / 2, row * chosen.width + chosen.width / 2],
+          position: [column * chosen.length + chosen.length / 2, current.usedHeight + box.height / 2, row * chosen.width + chosen.width / 2],
           size: [chosen.length, box.height, chosen.width],
         })
       }
       placed += inLayer
-      z += box.height
+      current.usedHeight += box.height
+      current.totalWeight += inLayer * Math.max(0, box.weight || 0)
     }
+    totalPlaced += placed
     totalWeight += placed * Math.max(0, box.weight || 0)
     results.push({ boxId: box.id, placed, remaining: Math.max(0, box.quantity - placed), orientation: `${chosen.length} × ${chosen.width} мм` })
   }
-  return { placements, results, usedHeight: z, totalWeight }
+  if (current.placements.length > 0) pallets.push(current)
+  return { pallets, results, totalPlaced, totalWeight }
 }

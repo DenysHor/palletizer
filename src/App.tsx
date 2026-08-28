@@ -13,15 +13,17 @@ const toNumber = (value: string) => Math.max(0, Number(value) || 0)
 export default function App() {
   const [pallet, setPallet] = useState(initialPallet)
   const [boxes, setBoxes] = useState(initialBoxes)
+  const [selectedPallet, setSelectedPallet] = useState(0)
   const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
+  const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
 
   const updatePallet = (key: keyof Pallet, value: string) => setPallet((current) => ({ ...current, [key]: toNumber(value) }))
   const updateBox = (id: string, key: keyof BoxType, value: string | boolean) => setBoxes((items) => items.map((box) => box.id === id ? { ...box, [key]: typeof value === 'string' && key !== 'name' ? toNumber(value) : value } : box))
   const addBox = () => setBoxes((items) => [...items, { id: crypto.randomUUID(), name: `Коробка ${String.fromCharCode(65 + items.length)}`, length: 300, width: 200, height: 200, quantity: 1, weight: 0, allowHorizontalRotation: true }])
 
   return <main>
-    <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? 'Усе вміщується' : 'Частина коробок не вмістилась'}</span></header>
+    <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? `Розкладено на палетах: ${calculation.pallets.length}` : 'Частина коробок не вмістилась'}</span></header>
     <div className="layout">
       <section className="controls">
         <h2>Палета</h2><div className="field-grid">
@@ -44,8 +46,9 @@ export default function App() {
         </article>)}</div>
       </section>
       <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>Укладка на палеті</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
-        <PalletScene pallet={pallet} boxes={boxes} placements={calculation.placements} />
-        <div className="metrics"><Metric label="Розміщено" value={`${calculation.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${calculation.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${calculation.totalWeight} кг`} /></div>
+        {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((_, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1}</button>)}</div>}
+        <PalletScene pallet={pallet} boxes={boxes} placements={activePallet.placements} />
+        <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
         <div className="summary"><h3>Результат за типами</h3>{calculation.results.map((item) => { const box = boxes.find((candidate) => candidate.id === item.boxId); return <div className="summary-row" key={item.boxId}><span>{box?.name}</span><span>{item.placed} / {box?.quantity} шт.</span><span className={item.remaining ? 'warning' : 'success'}>{item.remaining ? `Залишок: ${item.remaining}` : 'Вмістилось'}</span><small>{item.orientation}</small></div> })}</div>
       </section>
     </div>

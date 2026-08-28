@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei'
+import { Edges, OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import type { BoxType, Pallet, Placement } from './types'
 
@@ -22,6 +22,7 @@ export function PalletScene({ pallet, boxes, placements }: Props) {
         {placements.map((placement, index) => <mesh key={index} position={placement.position} castShadow>
           <boxGeometry args={placement.size} />
           <meshStandardMaterial color={colourFor(placement.boxId)} roughness={0.55} />
+          <Edges color="#111827" threshold={15} />
         </mesh>)}
       </group>
       <OrbitControls makeDefault minDistance={1.4} maxDistance={5} />
