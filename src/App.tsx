@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { colourForIndex } from './boxColours'
+import { boxesFromCsv, googleSheetCsvUrl } from './boxImport'
 import { calculatePallet } from './calculator'
 import { PalletScene } from './PalletScene'
 import type { BoxType, Pallet } from './types'
@@ -27,6 +28,9 @@ export default function App() {
   const [savedOrders, setSavedOrders] = useState(loadSavedOrders)
   const [savedOrderId, setSavedOrderId] = useState<string>()
   const [highlightedBoxId, setHighlightedBoxId] = useState<string>()
+  const [importUrl, setImportUrl] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
   const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
@@ -52,6 +56,20 @@ export default function App() {
     setOrderName(saved.name); setPallet(saved.pallet); setBoxes(saved.boxes); setSavedOrderId(saved.id); setSelectedPallet(0)
   }
   const newOrder = () => { setOrderName(''); setPallet(initialPallet); setBoxes(freshInitialBoxes()); setSavedOrderId(undefined); setSelectedPallet(0) }
+  const importBoxes = async () => {
+    if (!importUrl.trim()) return
+    setIsImporting(true); setImportStatus('Завантажуємо таблицю…')
+    try {
+      const response = await fetch(googleSheetCsvUrl(importUrl))
+      if (!response.ok) throw new Error('Посилання не відкрилося.')
+      const imported = boxesFromCsv(await response.text())
+      if (!imported.length) throw new Error('У таблиці немає коректних рядків коробок.')
+      setBoxes((current) => [...current, ...imported])
+      setImportStatus(`Додано типів коробок: ${imported.length}.`)
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'Не вдалося імпортувати таблицю.')
+    } finally { setIsImporting(false) }
+  }
 
   return <main>
     <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? `Розкладено на палетах: ${calculation.pallets.length}` : 'Частина коробок не вмістилась'}</span></header>
@@ -66,6 +84,7 @@ export default function App() {
           <Field label="Макс. висота вантажу, мм" value={pallet.maxHeight} onChange={(value) => updatePallet('maxHeight', value)} />
         </div>
         <p className="hint">Коробки не виходять за межі палети. Допустимий звіс верхнього шару над нижнім — до 100 мм.</p>
+        <div className="import-box"><h2>Імпорт коробок</h2><p>Вставте посилання на доступну Google Таблицю або прямий CSV-файл. Рядки буде додано до списку.</p><div className="import-actions"><input aria-label="Посилання на Google Таблицю або CSV" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value={importUrl} onChange={(event) => setImportUrl(event.target.value)} /><button className="secondary" disabled={isImporting || !importUrl.trim()} onClick={importBoxes}>{isImporting ? 'Імпорт…' : 'Імпортувати'}</button></div>{importStatus && <small className={importStatus.startsWith('Додано') ? 'import-success' : 'import-status'}>{importStatus}</small>}<small className="import-help">Колонки: Назва, Довжина, Ширина, Висота; додатково — Кількість, Вага, Поворот.</small></div>
         <div className="section-heading"><h2>Типи коробок</h2><button className="secondary" onClick={addBox}>+ Додати</button></div>
         <div className="box-list">{boxes.map((box, index) => <article className="box-card" key={box.id}>
           <div className="card-title"><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><input aria-label="Назва коробки" value={box.name} onChange={(event) => updateBox(box.id, 'name', event.target.value)} />{boxes.length > 1 && <button className="remove" aria-label="Видалити коробку" onClick={() => setBoxes((items) => items.filter((item) => item.id !== box.id))}>×</button>}</div>
