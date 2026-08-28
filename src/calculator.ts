@@ -25,7 +25,7 @@ function boundsOf(placements: Placement[]): Bounds {
   }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
 }
 
-/** Returns true only when the whole base of a box sits on boxes in the layer below. */
+/** Returns true only when the whole requested area is covered by the layer below. */
 function hasFullSupport(target: Bounds, supports: Placement[]): boolean {
   const intersections = supports.map(footprint).map((item) => ({
     minX: Math.max(target.minX, item.minX), maxX: Math.min(target.maxX, item.maxX), minZ: Math.max(target.minZ, item.minZ), maxZ: Math.min(target.maxZ, item.maxZ),
@@ -48,6 +48,29 @@ function hasFullSupport(target: Bounds, supports: Placement[]): boolean {
   return true
 }
 
+function boundsForNextLayer(pallet: Pallet, supports: Placement[]): Bounds {
+  if (supports.length === 0) return { minX: 0, maxX: pallet.length, minZ: 0, maxZ: pallet.width }
+  const support = boundsOf(supports)
+  return {
+    minX: Math.max(0, support.minX - MAX_OVERHANG), maxX: Math.min(pallet.length, support.maxX + MAX_OVERHANG),
+    minZ: Math.max(0, support.minZ - MAX_OVERHANG), maxZ: Math.min(pallet.width, support.maxZ + MAX_OVERHANG),
+  }
+}
+
+/**
+ * The upper box may project no more than 100 mm beyond the outer edge of the
+ * layer below, but its part above that layer's footprint must be fully held.
+ */
+function isSupportedWithAllowedOverhang(target: Bounds, supports: Placement[]): boolean {
+  const support = boundsOf(supports)
+  if (target.minX < support.minX - MAX_OVERHANG - EPSILON || target.maxX > support.maxX + MAX_OVERHANG + EPSILON || target.minZ < support.minZ - MAX_OVERHANG - EPSILON || target.maxZ > support.maxZ + MAX_OVERHANG + EPSILON) return false
+  const heldPart = {
+    minX: Math.max(target.minX, support.minX), maxX: Math.min(target.maxX, support.maxX),
+    minZ: Math.max(target.minZ, support.minZ), maxZ: Math.min(target.maxZ, support.maxZ),
+  }
+  return heldPart.minX < heldPart.maxX - EPSILON && heldPart.minZ < heldPart.maxZ - EPSILON && hasFullSupport(heldPart, supports)
+}
+
 function orientations(box: BoxType): Orientation[] {
   const options = [{ length: box.length, width: box.width }]
   if (box.allowHorizontalRotation && box.length !== box.width) options.push({ length: box.width, width: box.length })
@@ -63,7 +86,7 @@ function layerPositions(bounds: Bounds, orientation: Orientation, y: number, sup
   const positions: Placement[] = []
   for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
     const placement: Placement = { boxId: '', position: [startX + column * orientation.length + orientation.length / 2, y, startZ + row * orientation.width + orientation.width / 2], size: [orientation.length, 0, orientation.width] }
-    if (supports.length === 0 || hasFullSupport(footprint(placement), supports)) positions.push(placement)
+    if (supports.length === 0 || isSupportedWithAllowedOverhang(footprint(placement), supports)) positions.push(placement)
   }
   return positions
 }
@@ -72,9 +95,7 @@ type Candidate = { box: BoxType; positions: Placement[]; score: number }
 
 function chooseLayer(pallet: Pallet, boxes: BoxType[], placedById: Map<string, number>, load: PalletLoad): Candidate | undefined {
   const supports = load.layers.at(-1) ?? []
-  const bounds = supports.length > 0
-    ? boundsOf(supports)
-    : { minX: -MAX_OVERHANG, maxX: pallet.length + MAX_OVERHANG, minZ: -MAX_OVERHANG, maxZ: pallet.width + MAX_OVERHANG }
+  const bounds = boundsForNextLayer(pallet, supports)
   const supportArea = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ)
   let best: Candidate | undefined
 
@@ -95,9 +116,9 @@ function chooseLayer(pallet: Pallet, boxes: BoxType[], placedById: Map<string, n
 /**
  * Greedy, bottom-up palletisation. For every next layer it picks the remaining
  * box type and allowed orientation that covers the largest share of the
- * currently supported surface. Every upper box must have full support from
- * the layer immediately below; only the first layer may overhang the pallet,
- * and no more than 100 mm on each side.
+ * currently supported surface. Boxes never extend beyond the pallet. An upper
+ * layer may project up to 100 mm over the lower layer only where the remaining
+ * part of the box is fully supported.
  */
 export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculation {
   if (![pallet.length, pallet.width, pallet.maxHeight].every(valid)) return { pallets: [], results: [], totalPlaced: 0, totalWeight: 0 }

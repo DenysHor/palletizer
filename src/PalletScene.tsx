@@ -1,13 +1,12 @@
 import { Edges, OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
+import { colourForIndex } from './boxColours'
 import type { BoxType, Pallet, Placement } from './types'
-
-const colours = ['#ee8b3b', '#3f88c5', '#78b159', '#a96cc1', '#d15b72']
 
 type Props = { pallet: Pallet; boxes: BoxType[]; placements: Placement[] }
 
 export function PalletScene({ pallet, boxes, placements }: Props) {
-  const colourFor = (id: string) => colours[Math.max(0, boxes.findIndex((box) => box.id === id)) % colours.length]
+  const colourFor = (id: string) => colourForIndex(boxes.findIndex((box) => box.id === id))
   const scale = 1 / Math.max(pallet.length, pallet.width, pallet.maxHeight, 1)
   return <div className="scene">
     <Canvas camera={{ position: [1.8, 1.55, 1.8], fov: 43 }}>

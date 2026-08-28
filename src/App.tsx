@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { colourForIndex } from './boxColours'
 import { calculatePallet } from './calculator'
 import { PalletScene } from './PalletScene'
 import type { BoxType, Pallet } from './types'
@@ -9,12 +10,22 @@ const initialBoxes: BoxType[] = [
   { id: crypto.randomUUID(), name: 'Коробка B', length: 300, width: 200, height: 180, quantity: 30, weight: 7, allowHorizontalRotation: true },
 ]
 const toNumber = (value: string) => Math.max(0, Number(value) || 0)
+const storageKey = 'palletizer.saved-orders.v1'
+type SavedOrder = { id: string; name: string; pallet: Pallet; boxes: BoxType[] }
+
+function freshInitialBoxes(): BoxType[] { return initialBoxes.map((box) => ({ ...box, id: crypto.randomUUID() })) }
+function loadSavedOrders(): SavedOrder[] {
+  try { return JSON.parse(localStorage.getItem(storageKey) ?? '[]') as SavedOrder[] } catch { return [] }
+}
+function persistSavedOrders(orders: SavedOrder[]) { localStorage.setItem(storageKey, JSON.stringify(orders)) }
 
 export default function App() {
   const [pallet, setPallet] = useState(initialPallet)
-  const [boxes, setBoxes] = useState(initialBoxes)
+  const [boxes, setBoxes] = useState(freshInitialBoxes)
   const [selectedPallet, setSelectedPallet] = useState(0)
   const [orderName, setOrderName] = useState('')
+  const [savedOrders, setSavedOrders] = useState(loadSavedOrders)
+  const [savedOrderId, setSavedOrderId] = useState<string>()
   const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
@@ -22,21 +33,40 @@ export default function App() {
   const updatePallet = (key: keyof Pallet, value: string) => setPallet((current) => ({ ...current, [key]: toNumber(value) }))
   const updateBox = (id: string, key: keyof BoxType, value: string | boolean) => setBoxes((items) => items.map((box) => box.id === id ? { ...box, [key]: typeof value === 'string' && key !== 'name' ? toNumber(value) : value } : box))
   const addBox = () => setBoxes((items) => [...items, { id: crypto.randomUUID(), name: `Коробка ${String.fromCharCode(65 + items.length)}`, length: 300, width: 200, height: 200, quantity: 1, weight: 0, allowHorizontalRotation: true }])
+  const saveOrder = () => {
+    const name = orderName.trim()
+    if (!name) return
+    const saved: SavedOrder = { id: savedOrderId ?? crypto.randomUUID(), name, pallet, boxes }
+    setSavedOrders((current) => {
+      const next = current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]
+      persistSavedOrders(next)
+      return next
+    })
+    setSavedOrderId(saved.id)
+  }
+  const openOrder = (id: string) => {
+    const saved = savedOrders.find((item) => item.id === id)
+    if (!saved) return
+    setOrderName(saved.name); setPallet(saved.pallet); setBoxes(saved.boxes); setSavedOrderId(saved.id); setSelectedPallet(0)
+  }
+  const newOrder = () => { setOrderName(''); setPallet(initialPallet); setBoxes(freshInitialBoxes()); setSavedOrderId(undefined); setSelectedPallet(0) }
 
   return <main>
     <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? `Розкладено на палетах: ${calculation.pallets.length}` : 'Частина коробок не вмістилась'}</span></header>
     <div className="layout">
       <section className="controls">
         <label className="field order-name"><span>Назва замовлення</span><input type="text" placeholder="Наприклад, Замовлення № 184" value={orderName} onChange={(event) => setOrderName(event.target.value)} /></label>
+        <div className="order-actions"><button className="secondary" disabled={!orderName.trim()} onClick={saveOrder}>Зберегти</button><button className="new-order" onClick={newOrder}>Нове замовлення</button></div>
+        {savedOrders.length > 0 && <label className="field saved-orders"><span>Збережені замовлення</span><select value={savedOrderId ?? ''} onChange={(event) => openOrder(event.target.value)}><option value="" disabled>Оберіть замовлення</option>{savedOrders.map((saved) => <option key={saved.id} value={saved.id}>{saved.name}</option>)}</select></label>}
         <h2>Палета</h2><div className="field-grid">
           <Field label="Довжина, мм" value={pallet.length} onChange={(value) => updatePallet('length', value)} />
           <Field label="Ширина, мм" value={pallet.width} onChange={(value) => updatePallet('width', value)} />
           <Field label="Макс. висота вантажу, мм" value={pallet.maxHeight} onChange={(value) => updatePallet('maxHeight', value)} />
         </div>
-        <p className="hint">Максимальний винос коробки за край палети: 100 мм.</p>
+        <p className="hint">Коробки не виходять за межі палети. Допустимий звіс верхнього шару над нижнім — до 100 мм.</p>
         <div className="section-heading"><h2>Типи коробок</h2><button className="secondary" onClick={addBox}>+ Додати</button></div>
         <div className="box-list">{boxes.map((box, index) => <article className="box-card" key={box.id}>
-          <div className="card-title"><input aria-label="Назва коробки" value={box.name} onChange={(event) => updateBox(box.id, 'name', event.target.value)} />{boxes.length > 1 && <button className="remove" aria-label="Видалити коробку" onClick={() => setBoxes((items) => items.filter((item) => item.id !== box.id))}>×</button>}</div>
+          <div className="card-title"><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><input aria-label="Назва коробки" value={box.name} onChange={(event) => updateBox(box.id, 'name', event.target.value)} />{boxes.length > 1 && <button className="remove" aria-label="Видалити коробку" onClick={() => setBoxes((items) => items.filter((item) => item.id !== box.id))}>×</button>}</div>
           <div className="field-grid compact">
             <Field label="Д, мм" value={box.length} onChange={(value) => updateBox(box.id, 'length', value)} />
             <Field label="Ш, мм" value={box.width} onChange={(value) => updateBox(box.id, 'width', value)} />
