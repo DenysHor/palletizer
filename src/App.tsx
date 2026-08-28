@@ -14,6 +14,7 @@ export default function App() {
   const [pallet, setPallet] = useState(initialPallet)
   const [boxes, setBoxes] = useState(initialBoxes)
   const [selectedPallet, setSelectedPallet] = useState(0)
+  const [orderName, setOrderName] = useState('')
   const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
@@ -26,11 +27,13 @@ export default function App() {
     <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? `Розкладено на палетах: ${calculation.pallets.length}` : 'Частина коробок не вмістилась'}</span></header>
     <div className="layout">
       <section className="controls">
+        <label className="field order-name"><span>Назва замовлення</span><input type="text" placeholder="Наприклад, Замовлення № 184" value={orderName} onChange={(event) => setOrderName(event.target.value)} /></label>
         <h2>Палета</h2><div className="field-grid">
           <Field label="Довжина, мм" value={pallet.length} onChange={(value) => updatePallet('length', value)} />
           <Field label="Ширина, мм" value={pallet.width} onChange={(value) => updatePallet('width', value)} />
           <Field label="Макс. висота вантажу, мм" value={pallet.maxHeight} onChange={(value) => updatePallet('maxHeight', value)} />
         </div>
+        <p className="hint">Максимальний винос коробки за край палети: 100 мм.</p>
         <div className="section-heading"><h2>Типи коробок</h2><button className="secondary" onClick={addBox}>+ Додати</button></div>
         <div className="box-list">{boxes.map((box, index) => <article className="box-card" key={box.id}>
           <div className="card-title"><input aria-label="Назва коробки" value={box.name} onChange={(event) => updateBox(box.id, 'name', event.target.value)} />{boxes.length > 1 && <button className="remove" aria-label="Видалити коробку" onClick={() => setBoxes((items) => items.filter((item) => item.id !== box.id))}>×</button>}</div>
@@ -45,7 +48,7 @@ export default function App() {
           <small>Тип {index + 1}</small>
         </article>)}</div>
       </section>
-      <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>Укладка на палеті</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
+      <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
         {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((_, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1}</button>)}</div>}
         <PalletScene pallet={pallet} boxes={boxes} placements={activePallet.placements} />
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
