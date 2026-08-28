@@ -5,7 +5,7 @@ const EPSILON = 0.001
 const MAX_EXTREME_POINTS = 800
 const MAX_POINTS_PER_LEVEL = 80
 const MAX_PLACEMENTS_PER_PALLET = 2_000
-const TARGET_FILL = 0.8
+const TARGET_FILL = 0.9
 
 type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number }
 type Point = { x: number; y: number; z: number }

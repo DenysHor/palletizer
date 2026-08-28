@@ -14,6 +14,7 @@ const initialBoxes: BoxType[] = [
 const toNumber = (value: string) => Math.max(0, Number(value) || 0)
 const storageKey = 'palletizer.saved-orders.v1'
 const googleSheetTemplateCopyUrl = 'https://docs.google.com/spreadsheets/d/1tjanmhmIUI14_jO73fEvnXd9kJNRfS5R3p3cX0GLInk/copy'
+const targetFillPercent = 90
 type SavedOrder = { id: string; name: string; pallet: Pallet; boxes: BoxType[] }
 
 function freshInitialBoxes(): BoxType[] { return initialBoxes.map((box) => ({ ...box, id: crypto.randomUUID() })) }
@@ -39,7 +40,7 @@ export default function App() {
   const palletWithDefaults = useMemo(() => ({ ...initialPallet, ...pallet }), [pallet])
   const calculation = useMemo(() => calculatePallet(palletWithDefaults, boxes), [palletWithDefaults, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
-  const underfilledPallets = calculation.pallets.slice(0, -1).filter((load) => palletFillPercentage(load.placements, palletWithDefaults) < 80)
+  const underfilledPallets = calculation.pallets.slice(0, -1).filter((load) => palletFillPercentage(load.placements, palletWithDefaults) < targetFillPercent)
   const meetsFillTarget = allPlaced && underfilledPallets.length === 0
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
   const activeContents = boxes.map((box, index) => ({ box, index, quantity: activePallet.placements.filter((placement) => placement.boxId === box.id).length })).filter((item) => item.quantity > 0)
@@ -108,7 +109,7 @@ export default function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={meetsFillTarget ? 'status good' : 'status'}>{!allPlaced ? 'Частина коробок не вмістилась' : underfilledPallets.length ? `Нижче 80%: ${underfilledPallets.length} палет` : `Розкладено на палетах: ${calculation.pallets.length}`}</span></header>
+    <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={meetsFillTarget ? 'status good' : 'status'}>{!allPlaced ? 'Частина коробок не вмістилась' : underfilledPallets.length ? `Нижче ${targetFillPercent}%: ${underfilledPallets.length} палет` : `Розкладено на палетах: ${calculation.pallets.length}`}</span></header>
     <div className="layout">
       <section className="controls">
         <label className="field order-name"><span>Назва замовлення</span><input type="text" placeholder="Наприклад, Замовлення № 184" value={orderName} onChange={(event) => setOrderName(event.target.value)} /></label>
@@ -137,7 +138,7 @@ export default function App() {
         </article>)}</div>
       </section>
       <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><div className="result-actions"><p>Перетягуйте, щоб повернути модель</p><button className="pdf-export" disabled={!calculation.pallets.length || isExportingPdf} onClick={exportPdf}>{isExportingPdf ? 'Створюємо PDF…' : 'Експортувати PDF'}</button></div></div>
-        {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((load, index) => { const fill = palletFillPercentage(load.placements, palletWithDefaults); const isUnderfilled = index < calculation.pallets.length - 1 && fill < 80; return <button key={index} className={[index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : '', isUnderfilled ? 'underfilled' : ''].filter(Boolean).join(' ')} onClick={() => setSelectedPallet(index)}>Палета {index + 1} · {fill}%</button> })}</div>}
+        {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((load, index) => { const fill = palletFillPercentage(load.placements, palletWithDefaults); const isUnderfilled = index < calculation.pallets.length - 1 && fill < targetFillPercent; return <button key={index} className={[index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : '', isUnderfilled ? 'underfilled' : ''].filter(Boolean).join(' ')} onClick={() => setSelectedPallet(index)}>Палета {index + 1} · {fill}%</button> })}</div>}
         <PalletScene pallet={palletWithDefaults} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} onCanvasReady={(canvas) => { sceneCanvasRef.current = canvas }} />
         {pdfStatus && <p className="pdf-status">{pdfStatus}</p>}
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
