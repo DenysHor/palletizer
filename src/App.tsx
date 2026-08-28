@@ -5,7 +5,7 @@ import { calculatePallet } from './calculator'
 import { PalletScene } from './PalletScene'
 import type { BoxType, Pallet } from './types'
 
-const initialPallet: Pallet = { length: 1200, width: 800, maxHeight: 1600 }
+const initialPallet: Pallet = { length: 1200, width: 800, maxHeight: 1600, weight: 25 }
 const initialBoxes: BoxType[] = [
   { id: crypto.randomUUID(), name: 'Коробка A', length: 400, width: 300, height: 250, quantity: 24, weight: 12, allowHorizontalRotation: true },
   { id: crypto.randomUUID(), name: 'Коробка B', length: 300, width: 200, height: 180, quantity: 30, weight: 7, allowHorizontalRotation: true },
@@ -31,18 +31,22 @@ export default function App() {
   const [importUrl, setImportUrl] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [isImporting, setIsImporting] = useState(false)
-  const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
+  const palletWithDefaults = { ...initialPallet, ...pallet }
+  const calculation = useMemo(() => calculatePallet(palletWithDefaults, boxes), [palletWithDefaults, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
   const activeContents = boxes.map((box, index) => ({ box, index, quantity: activePallet.placements.filter((placement) => placement.boxId === box.id).length })).filter((item) => item.quantity > 0)
+  const totalBoxes = boxes.reduce((total, box) => total + Math.max(0, box.quantity), 0)
+  const palletsWeight = calculation.pallets.length * palletWithDefaults.weight
+  const grossWeight = calculation.totalWeight + palletsWeight
 
-  const updatePallet = (key: keyof Pallet, value: string) => setPallet((current) => ({ ...current, [key]: toNumber(value) }))
+  const updatePallet = (key: keyof Pallet, value: string) => setPallet((current) => ({ ...initialPallet, ...current, [key]: toNumber(value) }))
   const updateBox = (id: string, key: keyof BoxType, value: string | boolean) => setBoxes((items) => items.map((box) => box.id === id ? { ...box, [key]: typeof value === 'string' && key !== 'name' ? toNumber(value) : value } : box))
   const addBox = () => setBoxes((items) => [...items, { id: crypto.randomUUID(), name: `Коробка ${String.fromCharCode(65 + items.length)}`, length: 300, width: 200, height: 200, quantity: 1, weight: 0, allowHorizontalRotation: true }])
   const saveOrder = () => {
     const name = orderName.trim()
     if (!name) return
-    const saved: SavedOrder = { id: savedOrderId ?? crypto.randomUUID(), name, pallet, boxes }
+    const saved: SavedOrder = { id: savedOrderId ?? crypto.randomUUID(), name, pallet: palletWithDefaults, boxes }
     setSavedOrders((current) => {
       const next = current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]
       persistSavedOrders(next)
@@ -53,7 +57,7 @@ export default function App() {
   const openOrder = (id: string) => {
     const saved = savedOrders.find((item) => item.id === id)
     if (!saved) return
-    setOrderName(saved.name); setPallet(saved.pallet); setBoxes(saved.boxes); setSavedOrderId(saved.id); setSelectedPallet(0)
+    setOrderName(saved.name); setPallet({ ...initialPallet, ...saved.pallet }); setBoxes(saved.boxes); setSavedOrderId(saved.id); setSelectedPallet(0)
   }
   const newOrder = () => { setOrderName(''); setPallet(initialPallet); setBoxes(freshInitialBoxes()); setSavedOrderId(undefined); setSelectedPallet(0) }
   const importBoxes = async () => {
@@ -78,10 +82,11 @@ export default function App() {
         <label className="field order-name"><span>Назва замовлення</span><input type="text" placeholder="Наприклад, Замовлення № 184" value={orderName} onChange={(event) => setOrderName(event.target.value)} /></label>
         <div className="order-actions"><button className="secondary" disabled={!orderName.trim()} onClick={saveOrder}>Зберегти</button><button className="new-order" onClick={newOrder}>Нове замовлення</button></div>
         {savedOrders.length > 0 && <label className="field saved-orders"><span>Збережені замовлення</span><select value={savedOrderId ?? ''} onChange={(event) => openOrder(event.target.value)}><option value="" disabled>Оберіть замовлення</option>{savedOrders.map((saved) => <option key={saved.id} value={saved.id}>{saved.name}</option>)}</select></label>}
-        <h2>Палета</h2><div className="field-grid">
-          <Field label="Довжина, мм" value={pallet.length} onChange={(value) => updatePallet('length', value)} />
-          <Field label="Ширина, мм" value={pallet.width} onChange={(value) => updatePallet('width', value)} />
-          <Field label="Макс. висота вантажу, мм" value={pallet.maxHeight} onChange={(value) => updatePallet('maxHeight', value)} />
+        <h2>Палета</h2><div className="field-grid pallet-fields">
+          <Field label="Довжина, мм" value={palletWithDefaults.length} onChange={(value) => updatePallet('length', value)} />
+          <Field label="Ширина, мм" value={palletWithDefaults.width} onChange={(value) => updatePallet('width', value)} />
+          <Field label="Макс. висота вантажу, мм" value={palletWithDefaults.maxHeight} onChange={(value) => updatePallet('maxHeight', value)} />
+          <Field label="Вага палети, кг" value={palletWithDefaults.weight} onChange={(value) => updatePallet('weight', value)} />
         </div>
         <p className="hint">Коробки не виходять за межі палети. Допустимий звіс верхнього шару над нижнім — до 100 мм.</p>
         <div className="import-box"><h2>Імпорт коробок</h2><p>Вставте посилання на доступну Google Таблицю або прямий CSV-файл. Рядки буде додано до списку.</p><div className="import-actions"><input aria-label="Посилання на Google Таблицю або CSV" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value={importUrl} onChange={(event) => setImportUrl(event.target.value)} /><button className="secondary" disabled={isImporting || !importUrl.trim()} onClick={importBoxes}>{isImporting ? 'Імпорт…' : 'Імпортувати'}</button></div>{importStatus && <small className={importStatus.startsWith('Додано') ? 'import-success' : 'import-status'}>{importStatus}</small>}<small className="import-help">Колонки: Назва, Довжина, Ширина, Висота; додатково — Кількість, Вага, Поворот.</small></div>
@@ -101,8 +106,9 @@ export default function App() {
       </section>
       <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
         {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((_, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1}</button>)}</div>}
-        <PalletScene pallet={pallet} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} />
+        <PalletScene pallet={palletWithDefaults} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} />
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
+        <section className="report"><div><p className="eyebrow">Звіт</p><h3>Підсумок замовлення</h3></div><div className="report-grid"><Metric label="Усього коробок" value={`${totalBoxes} шт.`} /><Metric label="Розміщено коробок" value={`${calculation.totalPlaced} шт.`} /><Metric label="Палет потрібно" value={`${calculation.pallets.length} шт.`} /><Metric label="Вага коробок" value={formatWeight(calculation.totalWeight)} /><Metric label="Вага палет" value={formatWeight(palletsWeight)} /><Metric label="Вага з палетами" value={formatWeight(grossWeight)} /></div></section>
         <div className="pallet-contents"><h3>На цій палеті</h3><p>Наведіть на тип коробки, щоб підсвітити його у 3D.</p>{activeContents.map(({ box, index, quantity }) => <div className="pallet-content-row" key={box.id} tabIndex={0} onMouseEnter={() => setHighlightedBoxId(box.id)} onMouseLeave={() => setHighlightedBoxId(undefined)} onFocus={() => setHighlightedBoxId(box.id)} onBlur={() => setHighlightedBoxId(undefined)}><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><span>{box.name}</span><strong>{quantity} шт.</strong></div>)}</div>
         <div className="summary"><h3>Результат за типами</h3>{calculation.results.map((item) => { const box = boxes.find((candidate) => candidate.id === item.boxId); return <div className="summary-row" key={item.boxId}><span>{box?.name}</span><span>{item.placed} / {box?.quantity} шт.</span><span className={item.remaining ? 'warning' : 'success'}>{item.remaining ? `Залишок: ${item.remaining}` : 'Вмістилось'}</span><small>{item.orientation}</small></div> })}</div>
       </section>
@@ -114,3 +120,4 @@ function Field({ label, value, onChange }: { label: string; value: number; onCha
   return <label className="field"><span>{label}</span><input type="number" min="0" value={value} onChange={(event) => onChange(event.target.value)} /></label>
 }
 function Metric({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div> }
+function formatWeight(weight: number) { return `${Number.isInteger(weight) ? weight : weight.toFixed(1)} кг` }

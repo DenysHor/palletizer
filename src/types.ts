@@ -1,4 +1,4 @@
-export type Pallet = { length: number; width: number; maxHeight: number }
+export type Pallet = { length: number; width: number; maxHeight: number; weight: number }
 
 export type BoxType = {
   id: string
