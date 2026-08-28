@@ -3,13 +3,13 @@ import { Canvas } from '@react-three/fiber'
 import { colourForIndex } from './boxColours'
 import type { BoxType, Pallet, Placement } from './types'
 
-type Props = { pallet: Pallet; boxes: BoxType[]; placements: Placement[]; highlightedBoxId?: string }
+type Props = { pallet: Pallet; boxes: BoxType[]; placements: Placement[]; highlightedBoxId?: string; onCanvasReady?: (canvas: HTMLCanvasElement) => void }
 
-export function PalletScene({ pallet, boxes, placements, highlightedBoxId }: Props) {
+export function PalletScene({ pallet, boxes, placements, highlightedBoxId, onCanvasReady }: Props) {
   const colourFor = (id: string) => colourForIndex(boxes.findIndex((box) => box.id === id))
   const scale = 1 / Math.max(pallet.length, pallet.width, pallet.maxHeight, 1)
   return <div className="scene">
-    <Canvas camera={{ position: [1.8, 1.55, 1.8], fov: 43 }}>
+    <Canvas gl={{ preserveDrawingBuffer: true }} onCreated={({ gl }) => onCanvasReady?.(gl.domElement)} camera={{ position: [1.8, 1.55, 1.8], fov: 43 }}>
       <color attach="background" args={['#f6f8fb']} />
       <ambientLight intensity={1.3} />
       <directionalLight position={[3, 5, 4]} intensity={1.8} castShadow />

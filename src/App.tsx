@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { colourForIndex } from './boxColours'
 import { boxesFromCsv, googleSheetCsvUrl } from './boxImport'
 import { calculatePallet } from './calculator'
 import { PalletScene } from './PalletScene'
+import { exportPalletPdf } from './pdfReport'
 import type { BoxType, Pallet } from './types'
 
 const initialPallet: Pallet = { length: 1200, width: 800, maxHeight: 1600, weight: 15 }
@@ -32,6 +33,9 @@ export default function App() {
   const [importUrl, setImportUrl] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [isImporting, setIsImporting] = useState(false)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
+  const [pdfStatus, setPdfStatus] = useState('')
+  const sceneCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const palletWithDefaults = { ...initialPallet, ...pallet }
   const calculation = useMemo(() => calculatePallet(palletWithDefaults, boxes), [palletWithDefaults, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
@@ -75,6 +79,31 @@ export default function App() {
       setImportStatus(error instanceof Error ? error.message : 'Не вдалося імпортувати таблицю.')
     } finally { setIsImporting(false) }
   }
+  const exportPdf = async () => {
+    if (!calculation.pallets.length || isExportingPdf) return
+    const previousPallet = selectedPallet
+    const previousHighlight = highlightedBoxId
+    setPdfStatus('')
+    setIsExportingPdf(true)
+    try {
+      const captures: string[] = []
+      for (let index = 0; index < calculation.pallets.length; index += 1) {
+        setSelectedPallet(index)
+        setHighlightedBoxId(undefined)
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 120))
+        if (!sceneCanvasRef.current) throw new Error('Не вдалося підготувати 3D-візуалізацію.')
+        captures.push(sceneCanvasRef.current.toDataURL('image/png'))
+      }
+      await exportPalletPdf({ orderName, pallet: palletWithDefaults, boxes, pallets: calculation.pallets, totalPlaced: calculation.totalPlaced, totalWeight: calculation.totalWeight, captures })
+    } catch (error) {
+      setPdfStatus(error instanceof Error ? error.message : 'Не вдалося створити PDF-звіт.')
+    } finally {
+      setSelectedPallet(previousPallet)
+      setHighlightedBoxId(previousHighlight)
+      setIsExportingPdf(false)
+    }
+  }
 
   return <main>
     <header><div><p className="eyebrow">MVP</p><h1>Калькулятор палетизації</h1><p>Вкажіть габарити, а ми покажемо базову схему укладки.</p></div><span className={allPlaced ? 'status good' : 'status'}>{allPlaced ? `Розкладено на палетах: ${calculation.pallets.length}` : 'Частина коробок не вмістилась'}</span></header>
@@ -105,9 +134,10 @@ export default function App() {
           <small>Тип {index + 1}</small>
         </article>)}</div>
       </section>
-      <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
+      <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><div className="result-actions"><p>Перетягуйте, щоб повернути модель</p><button className="pdf-export" disabled={!calculation.pallets.length || isExportingPdf} onClick={exportPdf}>{isExportingPdf ? 'Створюємо PDF…' : 'Експортувати PDF'}</button></div></div>
         {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((load, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1} · {palletFillPercentage(load.placements, palletWithDefaults)}%</button>)}</div>}
-        <PalletScene pallet={palletWithDefaults} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} />
+        <PalletScene pallet={palletWithDefaults} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} onCanvasReady={(canvas) => { sceneCanvasRef.current = canvas }} />
+        {pdfStatus && <p className="pdf-status">{pdfStatus}</p>}
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
         <section className="report"><div><p className="eyebrow">Звіт</p><h3>Підсумок замовлення</h3></div><div className="report-grid"><Metric label="Усього коробок" value={`${totalBoxes} шт.`} /><Metric label="Розміщено коробок" value={`${calculation.totalPlaced} шт.`} /><Metric label="Палет потрібно" value={`${calculation.pallets.length} шт.`} /><Metric label="Вага коробок" value={formatWeight(calculation.totalWeight)} /><Metric label="Вага палет" value={formatWeight(palletsWeight)} /><Metric label="Вага з палетами" value={formatWeight(grossWeight)} /></div></section>
         <div className="pallet-contents"><h3>На цій палеті</h3><p>Наведіть на тип коробки, щоб підсвітити його у 3D.</p>{activeContents.map(({ box, index, quantity }) => <div className="pallet-content-row" key={box.id} tabIndex={0} onMouseEnter={() => setHighlightedBoxId(box.id)} onMouseLeave={() => setHighlightedBoxId(undefined)} onFocus={() => setHighlightedBoxId(box.id)} onBlur={() => setHighlightedBoxId(undefined)}><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><span>{box.name}</span><strong>{quantity} шт.</strong></div>)}</div>

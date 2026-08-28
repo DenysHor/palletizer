@@ -1,5 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
+.result-actions { display: grid; justify-items: end; gap: 8px; }
+.pdf-export { border: 0; border-radius: 8px; padding: 8px 11px; color: #fff; background: #5263bd; font: 700 12px inherit; cursor: pointer; }
+.pdf-export:disabled { cursor: not-allowed; opacity: .55; }
+.pdf-status { margin: 10px 0 0; color: #b34230; font-size: 12px; }
+
 .order-name { margin-bottom: 22px; }
 .hint { margin: -14px 0 25px; color: #778299; font-size: 11px; }
 .order-actions { display: flex; gap: 10px; margin: -10px 0 16px; }
