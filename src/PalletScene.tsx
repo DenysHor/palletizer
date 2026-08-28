@@ -3,9 +3,9 @@ import { Canvas } from '@react-three/fiber'
 import { colourForIndex } from './boxColours'
 import type { BoxType, Pallet, Placement } from './types'
 
-type Props = { pallet: Pallet; boxes: BoxType[]; placements: Placement[] }
+type Props = { pallet: Pallet; boxes: BoxType[]; placements: Placement[]; highlightedBoxId?: string }
 
-export function PalletScene({ pallet, boxes, placements }: Props) {
+export function PalletScene({ pallet, boxes, placements, highlightedBoxId }: Props) {
   const colourFor = (id: string) => colourForIndex(boxes.findIndex((box) => box.id === id))
   const scale = 1 / Math.max(pallet.length, pallet.width, pallet.maxHeight, 1)
   return <div className="scene">
@@ -18,11 +18,15 @@ export function PalletScene({ pallet, boxes, placements }: Props) {
           <boxGeometry args={[pallet.length, 70, pallet.width]} />
           <meshStandardMaterial color="#9b6b3e" roughness={0.75} />
         </mesh>
-        {placements.map((placement, index) => <mesh key={index} position={placement.position} castShadow>
+        {placements.map((placement, index) => {
+          const isHighlighted = highlightedBoxId === placement.boxId
+          const isDimmed = Boolean(highlightedBoxId) && !isHighlighted
+          return <mesh key={index} position={placement.position} castShadow>
           <boxGeometry args={placement.size} />
-          <meshStandardMaterial color={colourFor(placement.boxId)} roughness={0.55} />
-          <Edges color="#111827" threshold={15} />
-        </mesh>)}
+          <meshStandardMaterial color={colourFor(placement.boxId)} roughness={0.55} emissive={isHighlighted ? colourFor(placement.boxId) : '#000000'} emissiveIntensity={isHighlighted ? 0.3 : 0} transparent={isDimmed} opacity={isDimmed ? 0.18 : 1} />
+          <Edges color={isHighlighted ? '#ffffff' : '#111827'} threshold={15} />
+        </mesh>
+        })}
       </group>
       <OrbitControls makeDefault minDistance={1.4} maxDistance={5} />
     </Canvas>

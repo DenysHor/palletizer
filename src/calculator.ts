@@ -4,7 +4,7 @@ const MAX_OVERHANG = 100
 const EPSILON = 0.001
 
 type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number }
-type Orientation = { length: number; width: number }
+type Orientation = { length: number; width: number; height: number }
 
 export type PalletLoad = { placements: Placement[]; layers: Placement[][]; usedHeight: number; totalWeight: number }
 export type Calculation = { pallets: PalletLoad[]; results: BoxResult[]; totalPlaced: number; totalWeight: number }
@@ -72,8 +72,15 @@ function isSupportedWithAllowedOverhang(target: Bounds, supports: Placement[]): 
 }
 
 function orientations(box: BoxType): Orientation[] {
-  const options = [{ length: box.length, width: box.width }]
-  if (box.allowHorizontalRotation && box.length !== box.width) options.push({ length: box.width, width: box.length })
+  if (!box.allowHorizontalRotation) return [{ length: box.length, width: box.width, height: box.height }]
+  const values = [box.length, box.width, box.height]
+  const options: Orientation[] = []
+  for (const [lengthIndex, widthIndex, heightIndex] of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+    const length = values[lengthIndex]
+    const width = values[widthIndex]
+    const height = values[heightIndex]
+    if (!options.some((option) => option.length === length && option.width === width && option.height === height)) options.push({ length, width, height })
+  }
   return options
 }
 
@@ -91,7 +98,7 @@ function layerPositions(bounds: Bounds, orientation: Orientation, y: number, sup
   return positions
 }
 
-type Candidate = { box: BoxType; positions: Placement[]; score: number }
+type Candidate = { box: BoxType; orientation: Orientation; positions: Placement[]; score: number }
 
 function chooseLayer(pallet: Pallet, boxes: BoxType[], placedById: Map<string, number>, load: PalletLoad): Candidate | undefined {
   const supports = load.layers.at(-1) ?? []
@@ -101,13 +108,14 @@ function chooseLayer(pallet: Pallet, boxes: BoxType[], placedById: Map<string, n
 
   for (const box of boxes) {
     const remaining = box.quantity - (placedById.get(box.id) ?? 0)
-    if (![box.length, box.width, box.height, remaining].every(valid) || load.usedHeight + box.height > pallet.maxHeight) continue
+    if (![box.length, box.width, box.height, remaining].every(valid)) continue
     for (const orientation of orientations(box)) {
-      const cells = layerPositions(bounds, orientation, load.usedHeight + box.height / 2, supports)
-      const positions = cells.slice(0, remaining).map((item) => ({ ...item, boxId: box.id, size: [orientation.length, box.height, orientation.width] as [number, number, number] }))
+      if (load.usedHeight + orientation.height > pallet.maxHeight) continue
+      const cells = layerPositions(bounds, orientation, load.usedHeight + orientation.height / 2, supports)
+      const positions = cells.slice(0, remaining).map((item) => ({ ...item, boxId: box.id, size: [orientation.length, orientation.height, orientation.width] as [number, number, number] }))
       if (!positions.length) continue
       const score = positions.length * orientation.length * orientation.width / supportArea
-      if (!best || score > best.score + EPSILON || (Math.abs(score - best.score) <= EPSILON && box.height < best.box.height)) best = { box, positions, score }
+      if (!best || score > best.score + EPSILON || (Math.abs(score - best.score) <= EPSILON && orientation.height < best.orientation.height)) best = { box, orientation, positions, score }
     }
   }
   return best
@@ -125,6 +133,7 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
 
   const placedById = new Map(boxTypes.map((box) => [box.id, 0]))
   const pallets: PalletLoad[] = []
+  const orientationsByBox = new Map(boxTypes.map((box) => [box.id, new Set<string>()]))
   let current = emptyLoad()
   let totalPlaced = 0
   let totalWeight = 0
@@ -134,9 +143,10 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
     if (candidate) {
       current.layers.push(candidate.positions)
       current.placements.push(...candidate.positions)
-      current.usedHeight += candidate.box.height
+      current.usedHeight += candidate.orientation.height
       current.totalWeight += candidate.positions.length * Math.max(0, candidate.box.weight || 0)
       placedById.set(candidate.box.id, (placedById.get(candidate.box.id) ?? 0) + candidate.positions.length)
+      orientationsByBox.get(candidate.box.id)?.add(`${candidate.orientation.length} × ${candidate.orientation.width} × ${candidate.orientation.height} мм`)
       totalPlaced += candidate.positions.length
       totalWeight += candidate.positions.length * Math.max(0, candidate.box.weight || 0)
       continue
@@ -151,8 +161,8 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
 
   const results: BoxResult[] = boxTypes.filter((box) => [box.length, box.width, box.height, box.quantity].every(valid)).map((box) => {
     const placed = placedById.get(box.id) ?? 0
-    const best = orientations(box).reduce((choice, orientation) => orientation.length * orientation.width > choice.length * choice.width ? orientation : choice)
-    return { boxId: box.id, placed, remaining: Math.max(0, box.quantity - placed), orientation: `${best.length} × ${best.width} мм` }
+    const usedOrientations = [...(orientationsByBox.get(box.id) ?? [])]
+    return { boxId: box.id, placed, remaining: Math.max(0, box.quantity - placed), orientation: usedOrientations.length === 1 ? usedOrientations[0] : usedOrientations.length > 1 ? 'Кілька орієнтацій' : 'Не розміщено' }
   })
   return { pallets, results, totalPlaced, totalWeight }
 }

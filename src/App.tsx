@@ -26,9 +26,11 @@ export default function App() {
   const [orderName, setOrderName] = useState('')
   const [savedOrders, setSavedOrders] = useState(loadSavedOrders)
   const [savedOrderId, setSavedOrderId] = useState<string>()
+  const [highlightedBoxId, setHighlightedBoxId] = useState<string>()
   const calculation = useMemo(() => calculatePallet(pallet, boxes), [pallet, boxes])
   const allPlaced = calculation.results.every((result) => result.remaining === 0)
   const activePallet = calculation.pallets[Math.min(selectedPallet, calculation.pallets.length - 1)] ?? { placements: [], usedHeight: 0, totalWeight: 0 }
+  const activeContents = boxes.map((box, index) => ({ box, index, quantity: activePallet.placements.filter((placement) => placement.boxId === box.id).length })).filter((item) => item.quantity > 0)
 
   const updatePallet = (key: keyof Pallet, value: string) => setPallet((current) => ({ ...current, [key]: toNumber(value) }))
   const updateBox = (id: string, key: keyof BoxType, value: string | boolean) => setBoxes((items) => items.map((box) => box.id === id ? { ...box, [key]: typeof value === 'string' && key !== 'name' ? toNumber(value) : value } : box))
@@ -74,14 +76,15 @@ export default function App() {
             <Field label="Кількість" value={box.quantity} onChange={(value) => updateBox(box.id, 'quantity', value)} />
             <Field label="Вага, кг" value={box.weight} onChange={(value) => updateBox(box.id, 'weight', value)} />
           </div>
-          <label className="check"><input type="checkbox" checked={box.allowHorizontalRotation} onChange={(event) => updateBox(box.id, 'allowHorizontalRotation', event.target.checked)} /> Дозволити горизонтальний поворот</label>
+          <label className="check"><input type="checkbox" checked={box.allowHorizontalRotation} onChange={(event) => updateBox(box.id, 'allowHorizontalRotation', event.target.checked)} /> Дозволити поворот коробки в усіх площинах</label>
           <small>Тип {index + 1}</small>
         </article>)}</div>
       </section>
       <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
         {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((_, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1}</button>)}</div>}
-        <PalletScene pallet={pallet} boxes={boxes} placements={activePallet.placements} />
+        <PalletScene pallet={pallet} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} />
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
+        <div className="pallet-contents"><h3>На цій палеті</h3><p>Наведіть на тип коробки, щоб підсвітити його у 3D.</p>{activeContents.map(({ box, index, quantity }) => <div className="pallet-content-row" key={box.id} tabIndex={0} onMouseEnter={() => setHighlightedBoxId(box.id)} onMouseLeave={() => setHighlightedBoxId(undefined)} onFocus={() => setHighlightedBoxId(box.id)} onBlur={() => setHighlightedBoxId(undefined)}><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><span>{box.name}</span><strong>{quantity} шт.</strong></div>)}</div>
         <div className="summary"><h3>Результат за типами</h3>{calculation.results.map((item) => { const box = boxes.find((candidate) => candidate.id === item.boxId); return <div className="summary-row" key={item.boxId}><span>{box?.name}</span><span>{item.placed} / {box?.quantity} шт.</span><span className={item.remaining ? 'warning' : 'success'}>{item.remaining ? `Залишок: ${item.remaining}` : 'Вмістилось'}</span><small>{item.orientation}</small></div> })}</div>
       </section>
     </div>
