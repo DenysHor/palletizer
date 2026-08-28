@@ -106,7 +106,7 @@ export default function App() {
         </article>)}</div>
       </section>
       <section className="result"><div className="result-head"><div><p className="eyebrow">3D-схема</p><h2>{orderName ? `Укладка: ${orderName}` : 'Укладка на палеті'}</h2></div><p>Перетягуйте, щоб повернути модель</p></div>
-        {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((_, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1}</button>)}</div>}
+        {calculation.pallets.length > 1 && <div className="pallet-tabs" aria-label="Вибір палети">{calculation.pallets.map((load, index) => <button key={index} className={index === Math.min(selectedPallet, calculation.pallets.length - 1) ? 'active' : ''} onClick={() => setSelectedPallet(index)}>Палета {index + 1} · {palletFillPercentage(load.placements, palletWithDefaults)}%</button>)}</div>}
         <PalletScene pallet={palletWithDefaults} boxes={boxes} placements={activePallet.placements} highlightedBoxId={highlightedBoxId} />
         <div className="metrics"><Metric label="Розміщено на цій палеті" value={`${activePallet.placements.length} шт.`} /><Metric label="Висота вантажу" value={`${activePallet.usedHeight} мм`} /><Metric label="Вага вантажу" value={`${activePallet.totalWeight} кг`} /></div>
         <section className="report"><div><p className="eyebrow">Звіт</p><h3>Підсумок замовлення</h3></div><div className="report-grid"><Metric label="Усього коробок" value={`${totalBoxes} шт.`} /><Metric label="Розміщено коробок" value={`${calculation.totalPlaced} шт.`} /><Metric label="Палет потрібно" value={`${calculation.pallets.length} шт.`} /><Metric label="Вага коробок" value={formatWeight(calculation.totalWeight)} /><Metric label="Вага палет" value={formatWeight(palletsWeight)} /><Metric label="Вага з палетами" value={formatWeight(grossWeight)} /></div></section>
@@ -122,3 +122,8 @@ function Field({ label, value, onChange }: { label: string; value: number; onCha
 }
 function Metric({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div> }
 function formatWeight(weight: number) { return `${Number.isInteger(weight) ? weight : weight.toFixed(1)} кг` }
+function palletFillPercentage(placements: { size: [number, number, number] }[], pallet: Pallet) {
+  const palletVolume = pallet.length * pallet.width * pallet.maxHeight
+  const boxesVolume = placements.reduce((total, placement) => total + placement.size[0] * placement.size[1] * placement.size[2], 0)
+  return palletVolume > 0 ? Math.min(100, Math.round(boxesVolume / palletVolume * 100)) : 0
+}
