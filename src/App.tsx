@@ -12,6 +12,7 @@ const initialBoxes: BoxType[] = [
 ]
 const toNumber = (value: string) => Math.max(0, Number(value) || 0)
 const storageKey = 'palletizer.saved-orders.v1'
+const googleSheetTemplateCopyUrl = 'https://docs.google.com/spreadsheets/d/1tjanmhmIUI14_jO73fEvnXd9kJNRfS5R3p3cX0GLInk/copy'
 type SavedOrder = { id: string; name: string; pallet: Pallet; boxes: BoxType[] }
 
 function freshInitialBoxes(): BoxType[] { return initialBoxes.map((box) => ({ ...box, id: crypto.randomUUID() })) }
@@ -89,7 +90,7 @@ export default function App() {
           <Field label="Вага палети, кг" value={palletWithDefaults.weight} onChange={(value) => updatePallet('weight', value)} />
         </div>
         <p className="hint">Коробки не виходять за межі палети. Допустимий звіс верхнього шару над нижнім — до 100 мм.</p>
-        <div className="import-box"><h2>Імпорт коробок</h2><p>Вставте посилання на доступну Google Таблицю або прямий CSV-файл. Рядки буде додано до списку.</p><div className="import-actions"><input aria-label="Посилання на Google Таблицю або CSV" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value={importUrl} onChange={(event) => setImportUrl(event.target.value)} /><button className="secondary" disabled={isImporting || !importUrl.trim()} onClick={importBoxes}>{isImporting ? 'Імпорт…' : 'Імпортувати'}</button></div>{importStatus && <small className={importStatus.startsWith('Додано') ? 'import-success' : 'import-status'}>{importStatus}</small>}<small className="import-help">Колонки: Назва, Довжина, Ширина, Висота; додатково — Кількість, Вага, Поворот.</small></div>
+        <div className="import-box"><h2>Імпорт коробок</h2><p>Створіть копію готового шаблону у своєму Google Drive, заповніть рядки та вставте посилання нижче. Імпорт додасть їх до списку.</p><a className="template-link" href={googleSheetTemplateCopyUrl} target="_blank" rel="noreferrer">+ Створити Google Таблицю за шаблоном</a><div className="import-actions"><input aria-label="Посилання на Google Таблицю або CSV" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value={importUrl} onChange={(event) => setImportUrl(event.target.value)} /><button className="secondary" disabled={isImporting || !importUrl.trim()} onClick={importBoxes}>{isImporting ? 'Імпорт…' : 'Імпортувати'}</button></div>{importStatus && <small className={importStatus.startsWith('Додано') ? 'import-success' : 'import-status'}>{importStatus}</small>}<small className="import-help">Колонки: Назва, Довжина, Ширина, Висота; додатково — Кількість, Вага, Поворот.</small></div>
         <div className="section-heading"><h2>Типи коробок</h2><button className="secondary" onClick={addBox}>+ Додати</button></div>
         <div className="box-list">{boxes.map((box, index) => <article className="box-card" key={box.id}>
           <div className="card-title"><span className="colour-dot" style={{ backgroundColor: colourForIndex(index) }} aria-hidden="true" /><input aria-label="Назва коробки" value={box.name} onChange={(event) => updateBox(box.id, 'name', event.target.value)} />{boxes.length > 1 && <button className="remove" aria-label="Видалити коробку" onClick={() => setBoxes((items) => items.filter((item) => item.id !== box.id))}>×</button>}</div>

@@ -16,6 +16,8 @@
 .import-box { margin: 0 0 25px; padding: 14px; border: 1px solid #dfe5f2; border-radius: 12px; background: #f8f9fc; }
 .import-box h2 { margin-bottom: 4px; }
 .import-box p, .import-help { display: block; color: #778299; font-size: 11px; line-height: 1.45; }
+.template-link { display: inline-block; margin: 4px 0 3px; color: #4454aa; font-size: 12px; font-weight: 700; text-decoration: none; }
+.template-link:hover { text-decoration: underline; }
 .import-actions { display: flex; gap: 8px; margin: 11px 0 7px; }
 .import-actions input { min-width: 0; flex: 1; padding: 9px; border: 1px solid #dce2ed; border-radius: 8px; color: #172033; font: inherit; font-size: 11px; outline-color: #6574c8; }
 .import-status, .import-success { display: block; margin-bottom: 5px; font-size: 11px; }
