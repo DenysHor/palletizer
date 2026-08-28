@@ -5,7 +5,7 @@ import { calculatePallet } from './calculator'
 import { PalletScene } from './PalletScene'
 import type { BoxType, Pallet } from './types'
 
-const initialPallet: Pallet = { length: 1200, width: 800, maxHeight: 1600, weight: 25 }
+const initialPallet: Pallet = { length: 1200, width: 800, maxHeight: 1600, weight: 15 }
 const initialBoxes: BoxType[] = [
   { id: crypto.randomUUID(), name: 'Коробка A', length: 400, width: 300, height: 250, quantity: 24, weight: 12, allowHorizontalRotation: true },
   { id: crypto.randomUUID(), name: 'Коробка B', length: 300, width: 200, height: 180, quantity: 30, weight: 7, allowHorizontalRotation: true },
