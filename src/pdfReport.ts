@@ -20,6 +20,10 @@ type ReportData = {
 }
 
 type Context = CanvasRenderingContext2D
+type SummaryPagePlan = { boxes: BoxType[]; isFirst: boolean; hasTotals: boolean }
+type PdfCopy = (typeof copy)[Language]['pdf']
+
+const summaryRowHeight = 45
 
 function createCanvas() {
   const canvas = document.createElement('canvas')
@@ -75,7 +79,7 @@ function drawMetric(context: Context, x: number, y: number, width: number, label
   text(context, value, x + 18, y + 68, 30, 700)
 }
 
-async function palletPage(data: ReportData, load: PalletLoad, index: number) {
+async function palletPage(data: ReportData, load: PalletLoad, index: number, totalPages: number) {
   const { canvas, context } = createCanvas()
   const t = copy[data.language]
   const pdf = t.pdf
@@ -109,11 +113,54 @@ async function palletPage(data: ReportData, load: PalletLoad, index: number) {
     line(context, metricX, rowY + 17, page.width - page.margin, rowY + 17); rowY += 55
   }
   text(context, `${pdf.palletSize}: ${data.pallet.length} × ${data.pallet.width} ${t.millimeters} · ${pdf.maxHeight}: ${data.pallet.maxHeight} ${t.millimeters}`, page.margin, 888, 20, 400, colours.muted)
-  text(context, `${pdf.page} ${number} ${pdf.pageOf} ${data.pallets.length + 1}`, page.width - page.margin - 200, page.height - 54, 18, 400, colours.muted)
+  text(context, `${pdf.page} ${number} ${pdf.pageOf} ${totalPages}`, page.width - page.margin - 200, page.height - 54, 18, 400, colours.muted)
   return canvas
 }
 
-async function orderSummaryPage(data: ReportData) {
+function createSummaryPagePlan(boxes: BoxType[]) {
+  // The first page reserves space for order metrics, while the final page reserves space for totals.
+  if (boxes.length <= 10) return [{ boxes, isFirst: true, hasTotals: true } satisfies SummaryPagePlan]
+
+  const pageCount = Math.max(2, Math.ceil((boxes.length + 10) / 20))
+  const capacities = [15, ...Array(Math.max(0, pageCount - 2)).fill(20), 15]
+  let remaining = boxes.length
+  let offset = 0
+
+  return capacities.map((capacity, index) => {
+    const remainingPages = capacities.length - index
+    const futureCapacity = capacities.slice(index + 1).reduce((sum, value) => sum + value, 0)
+    const minimumHere = Math.max(0, remaining - futureCapacity)
+    const balanced = Math.ceil(remaining / remainingPages)
+    const count = Math.min(capacity, Math.max(minimumHere, balanced))
+    const pageBoxes = boxes.slice(offset, offset + count)
+    offset += count
+    remaining -= count
+    return { boxes: pageBoxes, isFirst: index === 0, hasTotals: index === capacities.length - 1 }
+  })
+}
+
+function drawBoxesTable(context: Context, boxes: BoxType[], language: Language, pdf: PdfCopy, startY: number) {
+  const t = copy[language]
+  const columns = [page.margin, 440, 700, 910, 1090, 1275, 1505]
+  const headers = [pdf.name, pdf.dimensions, pdf.quantity, pdf.itemWeight, pdf.volume, pdf.totalWeight]
+  headers.forEach((header, index) => text(context, header, columns[index], startY - 60, 17, 700, colours.muted))
+  line(context, page.margin, startY - 43, page.width - page.margin, startY - 43)
+
+  let y = startY
+  for (const box of boxes) {
+    text(context, box.name, columns[0], y, 22, 700)
+    text(context, `${box.length} × ${box.width} × ${box.height}`, columns[1], y, 20, 400, colours.muted)
+    text(context, `${box.quantity} ${t.pieces}`, columns[2], y, 20)
+    text(context, formatWeight(box.weight, t.kilograms), columns[3], y, 20)
+    text(context, formatVolume(box.quantity * box.length * box.width * box.height), columns[4], y, 20)
+    text(context, formatWeight(box.quantity * box.weight, t.kilograms), columns[5], y, 20, 700)
+    line(context, page.margin, y + 15, page.width - page.margin, y + 15)
+    y += summaryRowHeight
+  }
+  return y
+}
+
+async function orderSummaryPage(data: ReportData, plan: SummaryPagePlan, summaryIndex: number, totalPages: number) {
   const { canvas, context } = createCanvas()
   const t = copy[data.language]
   const pdf = t.pdf
@@ -126,51 +173,52 @@ async function orderSummaryPage(data: ReportData) {
   drawImageContain(context, logo, page.margin, 18, 230, 94)
   text(context, pdf.reportTitle, page.margin + 255, 58, 20, 700, colours.accent)
   text(context, data.orderName || t.untitledOrder, page.margin + 255, 105, 36, 700)
-  text(context, pdf.orderData, page.margin, 168, 28, 700)
-  drawMetric(context, page.margin, 195, 245, pdf.totalBoxes, `${requestedBoxes} ${t.pieces}`)
-  drawMetric(context, page.margin + 270, 195, 245, pdf.boxesVolume, formatVolume(requestedVolume))
-  drawMetric(context, page.margin + 540, 195, 245, pdf.palletsNeeded, `${data.pallets.length} ${t.pieces}`)
-  drawMetric(context, page.margin + 810, 195, 245, pdf.boxesWeight, formatWeight(requestedWeight, t.kilograms))
-  drawMetric(context, page.margin + 1080, 195, 245, pdf.grossWeightOrder, formatWeight(data.totalWeight + palletsWeight, t.kilograms))
-  text(context, `${pdf.totalVolume}: ${formatVolume(requestedVolume)} · ${pdf.palletsWeight}: ${formatWeight(palletsWeight, t.kilograms)}`, page.margin, 330, 21, 400, colours.muted)
+  const pageNumber = data.pallets.length + summaryIndex + 1
+  const tableStartY = plan.isFirst ? 505 : 280
 
-  text(context, pdf.boxesList, page.margin, 405, 26, 700)
-  const columns = [page.margin, 440, 700, 910, 1090, 1275, 1505]
-  const headers = [pdf.name, pdf.dimensions, pdf.quantity, pdf.itemWeight, pdf.volume, pdf.totalWeight]
-  headers.forEach((header, index) => text(context, header, columns[index], 445, 17, 700, colours.muted))
-  line(context, page.margin, 462, page.width - page.margin, 462)
-  let y = 505
-  for (const box of data.boxes) {
-    text(context, box.name, columns[0], y, 22, 700)
-    text(context, `${box.length} × ${box.width} × ${box.height}`, columns[1], y, 20, 400, colours.muted)
-    text(context, `${box.quantity} ${t.pieces}`, columns[2], y, 20)
-    text(context, formatWeight(box.weight, t.kilograms), columns[3], y, 20)
-    text(context, formatVolume(box.quantity * box.length * box.width * box.height), columns[4], y, 20)
-    text(context, formatWeight(box.quantity * box.weight, t.kilograms), columns[5], y, 20, 700)
-    line(context, page.margin, y + 18, page.width - page.margin, y + 18); y += 52
+  if (plan.isFirst) {
+    text(context, pdf.orderData, page.margin, 168, 28, 700)
+    drawMetric(context, page.margin, 195, 245, pdf.totalBoxes, `${requestedBoxes} ${t.pieces}`)
+    drawMetric(context, page.margin + 270, 195, 245, pdf.boxesVolume, formatVolume(requestedVolume))
+    drawMetric(context, page.margin + 540, 195, 245, pdf.palletsNeeded, `${data.pallets.length} ${t.pieces}`)
+    drawMetric(context, page.margin + 810, 195, 245, pdf.boxesWeight, formatWeight(requestedWeight, t.kilograms))
+    drawMetric(context, page.margin + 1080, 195, 245, pdf.grossWeightOrder, formatWeight(data.totalWeight + palletsWeight, t.kilograms))
+    text(context, `${pdf.totalVolume}: ${formatVolume(requestedVolume)} · ${pdf.palletsWeight}: ${formatWeight(palletsWeight, t.kilograms)}`, page.margin, 330, 21, 400, colours.muted)
+    text(context, pdf.boxesList, page.margin, 405, 26, 700)
+  } else {
+    text(context, pdf.boxesList, page.margin, 180, 28, 700)
   }
-  roundRect(context, page.margin, Math.max(y + 24, 600), page.width - page.margin * 2, 126, '#edf0ff')
-  const totalY = Math.max(y + 65, 640)
-  text(context, pdf.totals, page.margin + 25, totalY - 25, 19, 700, colours.accent)
-  text(context, `${t.totalBoxes}: ${requestedBoxes} ${t.pieces}`, page.margin + 25, totalY + 18, 23, 700)
-  text(context, `${pdf.volumeTotal}: ${formatVolume(requestedVolume)}`, page.margin + 410, totalY + 18, 23, 700)
-  text(context, `${pdf.boxesWeightTotal}: ${formatWeight(requestedWeight, t.kilograms)}`, page.margin + 820, totalY + 18, 23, 700)
-  text(context, `${t.grossWeight}: ${formatWeight(data.totalWeight + palletsWeight, t.kilograms)}`, page.margin + 25, totalY + 60, 23, 700)
-  text(context, `${pdf.palletSize}: ${data.pallet.length} × ${data.pallet.width} ${t.millimeters} · ${pdf.maxHeight}: ${data.pallet.maxHeight} ${t.millimeters}`, page.margin + 410, totalY + 60, 20, 400, colours.muted)
-  text(context, `${pdf.page} ${data.pallets.length + 1} ${pdf.pageOf} ${data.pallets.length + 1}`, page.width - page.margin - 200, page.height - 54, 18, 400, colours.muted)
+
+  const y = drawBoxesTable(context, plan.boxes, data.language, pdf, tableStartY)
+  if (plan.hasTotals) {
+    const cardY = Math.max(y + 24, plan.isFirst ? 600 : 500)
+    const totalY = cardY + 65
+    roundRect(context, page.margin, cardY, page.width - page.margin * 2, 126, '#edf0ff')
+    text(context, pdf.totals, page.margin + 25, totalY - 25, 19, 700, colours.accent)
+    text(context, `${t.totalBoxes}: ${requestedBoxes} ${t.pieces}`, page.margin + 25, totalY + 18, 23, 700)
+    text(context, `${pdf.volumeTotal}: ${formatVolume(requestedVolume)}`, page.margin + 410, totalY + 18, 23, 700)
+    text(context, `${pdf.boxesWeightTotal}: ${formatWeight(requestedWeight, t.kilograms)}`, page.margin + 820, totalY + 18, 23, 700)
+    text(context, `${t.grossWeight}: ${formatWeight(data.totalWeight + palletsWeight, t.kilograms)}`, page.margin + 25, totalY + 60, 23, 700)
+    text(context, `${pdf.palletSize}: ${data.pallet.length} × ${data.pallet.width} ${t.millimeters} · ${pdf.maxHeight}: ${data.pallet.maxHeight} ${t.millimeters}`, page.margin + 410, totalY + 60, 20, 400, colours.muted)
+  }
+  text(context, `${pdf.page} ${pageNumber} ${pdf.pageOf} ${totalPages}`, page.width - page.margin - 200, page.height - 54, 18, 400, colours.muted)
   return canvas
 }
 
 export async function exportPalletPdf(data: ReportData) {
   const document = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
+  const summaryPages = createSummaryPagePlan(data.boxes)
+  const totalPages = data.pallets.length + summaryPages.length
   for (let index = 0; index < data.pallets.length; index += 1) {
     if (index > 0) document.addPage('a4', 'landscape')
-    const canvas = await palletPage(data, data.pallets[index], index)
+    const canvas = await palletPage(data, data.pallets[index], index, totalPages)
     document.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210, undefined, 'FAST')
   }
-  if (data.pallets.length) document.addPage('a4', 'landscape')
-  const summary = await orderSummaryPage(data)
-  document.addImage(summary.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210, undefined, 'FAST')
+  for (let index = 0; index < summaryPages.length; index += 1) {
+    if (data.pallets.length || index > 0) document.addPage('a4', 'landscape')
+    const summary = await orderSummaryPage(data, summaryPages[index], index, totalPages)
+    document.addImage(summary.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210, undefined, 'FAST')
+  }
   const fallbackName = data.language === 'uk' ? 'замовлення' : 'order'
   const fileName = `${copy[data.language].pdf.fileName}-${(data.orderName || fallbackName).replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '') || fallbackName}.pdf`
   document.save(fileName)
