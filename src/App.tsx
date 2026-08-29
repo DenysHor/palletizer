@@ -106,6 +106,16 @@ export default function App() {
     const savedBoxes = saved.boxes.map((box) => ({ ...box }))
     setOrderName(saved.name); setPallet(savedPallet); setBoxes(savedBoxes); setCalculationInput(copyCalculationInput(savedPallet, savedBoxes)); setSavedOrderId(saved.id); setSelectedPallet(0); setHighlightedBoxId(undefined); setPdfStatus('')
   }
+  const deleteOrder = () => {
+    const saved = savedOrders.find((item) => item.id === savedOrderId)
+    if (!saved || !window.confirm(t.deleteOrderConfirmation(saved.name))) return
+    setSavedOrders((current) => {
+      const next = current.filter((item) => item.id !== saved.id)
+      persistSavedOrders(next)
+      return next
+    })
+    setSavedOrderId(undefined)
+  }
   const newOrder = () => {
     const newPallet = { ...initialPallet }
     const newBoxes = freshInitialBoxes(language)
@@ -163,7 +173,7 @@ export default function App() {
       <section className="controls">
         <label className="field order-name"><span>{t.orderName}</span><input type="text" placeholder={t.orderPlaceholder} value={orderName} onChange={(event) => setOrderName(event.target.value)} /></label>
         <div className="order-actions"><button className="secondary" disabled={!orderName.trim()} onClick={saveOrder}>{t.save}</button><button className="new-order" onClick={newOrder}>{t.newOrder}</button></div>
-        {savedOrders.length > 0 && <label className="field saved-orders"><span>{t.savedOrders}</span><select value={savedOrderId ?? ''} onChange={(event) => openOrder(event.target.value)}><option value="" disabled>{t.chooseOrder}</option>{savedOrders.map((saved) => <option key={saved.id} value={saved.id}>{saved.name}</option>)}</select></label>}
+        {savedOrders.length > 0 && <div className="saved-order-controls"><label className="field saved-orders"><span>{t.savedOrders}</span><select value={savedOrderId ?? ''} onChange={(event) => openOrder(event.target.value)}><option value="" disabled>{t.chooseOrder}</option>{savedOrders.map((saved) => <option key={saved.id} value={saved.id}>{saved.name}</option>)}</select></label><button className="delete-saved-order" disabled={!savedOrderId} onClick={deleteOrder}>{t.deleteOrder}</button></div>}
         <div className="calculation-actions"><button className="calculate" onClick={calculateLayout}>{t.calculate}</button>{needsRecalculation && <span>{t.recalculationNeeded}</span>}</div>
         <h2>{t.pallet}</h2><div className="field-grid pallet-fields">
           <Field label={t.palletLength} value={palletWithDefaults.length} onChange={(value) => updatePallet('length', value)} />
