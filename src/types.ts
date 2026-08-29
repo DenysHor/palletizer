@@ -17,4 +17,4 @@ export type Placement = {
   size: [number, number, number]
 }
 
-export type BoxResult = { boxId: string; placed: number; remaining: number; orientation: string }
+export type BoxResult = { boxId: string; placed: number; remaining: number; orientation: string; multipleOrientations: boolean }

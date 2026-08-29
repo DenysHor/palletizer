@@ -424,7 +424,7 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
   const results: BoxResult[] = validBoxes.map((box) => {
     const placed = placedById.get(box.id) ?? 0
     const usedOrientations = [...(orientationsByBox.get(box.id) ?? [])]
-    return { boxId: box.id, placed, remaining: Math.max(0, box.quantity - placed), orientation: usedOrientations.length === 1 ? usedOrientations[0] : usedOrientations.length > 1 ? 'Кілька орієнтацій' : 'Не розміщено' }
+    return { boxId: box.id, placed, remaining: Math.max(0, box.quantity - placed), orientation: usedOrientations.length === 1 ? usedOrientations[0] : '', multipleOrientations: usedOrientations.length > 1 }
   })
   return { pallets: sortLoads(loads, pallet), results, totalPlaced, totalWeight }
 }
