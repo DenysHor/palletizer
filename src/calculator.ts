@@ -6,6 +6,8 @@ const MAX_EXTREME_POINTS = 800
 const MAX_POINTS_PER_LEVEL = 80
 const MAX_PLACEMENTS_PER_PALLET = 2_000
 const TARGET_FILL = 0.9
+const GLOBAL_BEAM_WIDTH = 2
+const LOAD_OPTIONS_PER_STATE = 2
 
 type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number }
 type Point = { x: number; y: number; z: number }
@@ -17,6 +19,7 @@ type Candidate = { box: BoxType; placement: Placement; origin: Point; score: num
 
 export type PalletLoad = { placements: Placement[]; layers: Placement[][]; usedHeight: number; totalWeight: number }
 export type Calculation = { pallets: PalletLoad[]; results: BoxResult[]; totalPlaced: number; totalWeight: number }
+type PlanState = { remaining: Map<string, number>; loads: PalletLoad[] }
 
 const valid = (value: number) => Number.isFinite(value) && value > 0
 const volumeOf = (placement: Placement) => placement.size[0] * placement.size[1] * placement.size[2]
@@ -258,6 +261,135 @@ function placedCounts(load: PalletLoad): Map<string, number> {
   return load.placements.reduce((counts, placement) => counts.set(placement.boxId, (counts.get(placement.boxId) ?? 0) + 1), new Map<string, number>())
 }
 
+function loadProfile(load: PalletLoad) {
+  return [...placedCounts(load).entries()].sort(([a], [b]) => a.localeCompare(b)).map(([boxId, quantity]) => `${boxId}:${quantity}`).join('|')
+}
+
+function nextRemaining(remaining: Map<string, number>, load: PalletLoad) {
+  const next = new Map(remaining)
+  for (const [boxId, quantity] of placedCounts(load)) next.set(boxId, Math.max(0, (next.get(boxId) ?? 0) - quantity))
+  return next
+}
+
+function remainingKey(remaining: Map<string, number>, boxes: BoxType[]) {
+  return boxes.map((box) => remaining.get(box.id) ?? 0).join('|')
+}
+
+function underfilledCount(loads: PalletLoad[], pallet: Pallet) {
+  return sortLoads(loads, pallet).slice(0, -1).filter((load) => loadFill(load, pallet) < TARGET_FILL - EPSILON).length
+}
+
+function planScore(state: PlanState, pallet: Pallet, boxes: BoxType[]) {
+  const packedFill = state.loads.reduce((total, load) => total + loadFill(load, pallet), 0)
+  const difficultFill = state.loads.reduce((total, load) => total + loadDifficulty(load, pallet, boxes) / (pallet.length * pallet.width * pallet.maxHeight), 0)
+  return -underfilledCount(state.loads, pallet) * 10_000 + packedFill * 100 + difficultFill
+}
+
+function chooseLoadOptions(pallet: Pallet, boxes: BoxType[], available: Map<string, number>, targetVolume?: number) {
+  const attempts = (['surface', 'volume', 'height', 'stack', 'hard'] as const).map((strategy) => buildPallet(pallet, boxes, available, strategy))
+  if (targetVolume !== undefined) attempts.push(...deckSeeds(pallet, boxes, available).slice(0, 2).map((seed) => buildPallet(pallet, boxes, available, 'surface', undefined, seed)))
+  const unique = new Map<string, PalletLoad>()
+  for (const load of attempts) {
+    if (!load.placements.length) continue
+    const profile = loadProfile(load)
+    const existing = unique.get(profile)
+    if (!existing || loadVolume(load) > loadVolume(existing) + EPSILON) unique.set(profile, load)
+  }
+  const loads = [...unique.values()]
+  const reachingTarget = targetVolume === undefined ? loads : loads.filter((load) => loadVolume(load) >= targetVolume - EPSILON)
+  const candidates = reachingTarget.length ? reachingTarget : loads
+  return candidates.sort((a, b) => loadVolume(b) - loadVolume(a) || loadDifficulty(b, pallet, boxes) - loadDifficulty(a, pallet, boxes) || b.placements.length - a.placements.length).slice(0, LOAD_OPTIONS_PER_STATE)
+}
+
+function choosePlanStates(states: PlanState[], pallet: Pallet, boxes: BoxType[]) {
+  const unique = new Map<string, PlanState>()
+  for (const state of states) {
+    const key = remainingKey(state.remaining, boxes)
+    const existing = unique.get(key)
+    if (!existing || planScore(state, pallet, boxes) > planScore(existing, pallet, boxes) + EPSILON) unique.set(key, state)
+  }
+  return [...unique.values()].sort((a, b) => planScore(b, pallet, boxes) - planScore(a, pallet, boxes)).slice(0, GLOBAL_BEAM_WIDTH)
+}
+
+function compareCompletedPlans(a: PlanState, b: PlanState, pallet: Pallet, boxes: BoxType[]) {
+  if (a.loads.length !== b.loads.length) return a.loads.length - b.loads.length
+  const underfilledDifference = underfilledCount(a.loads, pallet) - underfilledCount(b.loads, pallet)
+  if (underfilledDifference) return underfilledDifference
+  const aFill = a.loads.reduce((total, load) => total + loadFill(load, pallet), 0)
+  const bFill = b.loads.reduce((total, load) => total + loadFill(load, pallet), 0)
+  if (Math.abs(aFill - bFill) > EPSILON) return bFill - aFill
+  return planScore(b, pallet, boxes) - planScore(a, pallet, boxes)
+}
+
+function optimiseHighTargetPlan(pallet: Pallet, boxes: BoxType[], initialRemaining: Map<string, number>) {
+  const remaining = new Map(initialRemaining)
+  const loads: PalletLoad[] = []
+  const capacity = pallet.length * pallet.width * pallet.maxHeight
+  while ([...remaining.values()].some((quantity) => quantity > 0)) {
+    const volumeLeft = remainingVolume(boxes, remaining)
+    const palletsNeeded = Math.ceil(volumeLeft / capacity)
+    const targetVolume = palletsNeeded > 1 ? Math.max(capacity * TARGET_FILL, volumeLeft - (palletsNeeded - 1) * capacity) : undefined
+    const load = bestPallet(pallet, boxes, remaining, targetVolume)
+    if (!load.placements.length) break
+    loads.push(load)
+    for (const [boxId, quantity] of placedCounts(load)) remaining.set(boxId, Math.max(0, (remaining.get(boxId) ?? 0) - quantity))
+  }
+  return { loads, remaining }
+}
+
+function compareOrderPlans(a: { loads: PalletLoad[]; remaining: Map<string, number> }, b: { loads: PalletLoad[]; remaining: Map<string, number> }, pallet: Pallet, boxes: BoxType[]) {
+  const aUnplaced = remainingVolume(boxes, a.remaining)
+  const bUnplaced = remainingVolume(boxes, b.remaining)
+  if (Math.abs(aUnplaced - bUnplaced) > EPSILON) return aUnplaced - bUnplaced
+  if (a.loads.length !== b.loads.length) return a.loads.length - b.loads.length
+  const underfilledDifference = underfilledCount(a.loads, pallet) - underfilledCount(b.loads, pallet)
+  if (underfilledDifference) return underfilledDifference
+  const aFill = a.loads.reduce((total, load) => total + loadFill(load, pallet), 0)
+  const bFill = b.loads.reduce((total, load) => total + loadFill(load, pallet), 0)
+  return bFill - aFill
+}
+
+/**
+ * Searches several complete order plans at once instead of committing to the
+ * first locally good pallet. Candidate plans are compared by pallet count,
+ * the number of sub-target pallets (except the final pallet), and total fill.
+ */
+function optimiseWholeOrder(pallet: Pallet, boxes: BoxType[], initialRemaining: Map<string, number>) {
+  const capacity = pallet.length * pallet.width * pallet.maxHeight
+  const maximumPallets = boxes.reduce((total, box) => total + Math.max(0, initialRemaining.get(box.id) ?? 0), 0)
+  let frontier: PlanState[] = [{ remaining: new Map(initialRemaining), loads: [] }]
+  let bestPartial = frontier[0]
+
+  for (let step = 0; step < maximumPallets && frontier.length; step += 1) {
+    const next: PlanState[] = []
+    const completed: PlanState[] = []
+    for (const state of frontier) {
+      const volumeLeft = remainingVolume(boxes, state.remaining)
+      const palletsNeeded = Math.ceil(volumeLeft / capacity)
+      const targetVolume = palletsNeeded > 1 ? Math.max(capacity * TARGET_FILL, volumeLeft - (palletsNeeded - 1) * capacity) : undefined
+      for (const load of chooseLoadOptions(pallet, boxes, state.remaining, targetVolume)) {
+        const candidate = { remaining: nextRemaining(state.remaining, load), loads: [...state.loads, load] }
+        if ([...candidate.remaining.values()].every((quantity) => quantity <= 0)) completed.push(candidate)
+        else next.push(candidate)
+      }
+    }
+    if (completed.length) return completed.sort((a, b) => compareCompletedPlans(a, b, pallet, boxes))[0].loads
+    if (!next.length) break
+    frontier = choosePlanStates(next, pallet, boxes)
+    if (planScore(frontier[0], pallet, boxes) > planScore(bestPartial, pallet, boxes) + EPSILON) bestPartial = frontier[0]
+  }
+  return bestPartial.loads
+}
+
+function optimiseOrder(pallet: Pallet, boxes: BoxType[], initialRemaining: Map<string, number>) {
+  const globalLoads = optimiseWholeOrder(pallet, boxes, initialRemaining)
+  const globalRemaining = new Map(initialRemaining)
+  for (const load of globalLoads) for (const [boxId, quantity] of placedCounts(load)) globalRemaining.set(boxId, Math.max(0, (globalRemaining.get(boxId) ?? 0) - quantity))
+  const globalPlan = { loads: globalLoads, remaining: globalRemaining }
+  const highTargetPlan = optimiseHighTargetPlan(pallet, boxes, initialRemaining)
+  return [globalPlan, highTargetPlan].sort((a, b) => compareOrderPlans(a, b, pallet, boxes))[0].loads
+}
+
 function sortLoads(loads: PalletLoad[], pallet: Pallet): PalletLoad[] {
   return [...loads].sort((a, b) => loadFill(b, pallet) - loadFill(a, pallet))
 }
@@ -276,7 +408,6 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
   const loads: PalletLoad[] = []
   let totalPlaced = 0
   let totalWeight = 0
-  const capacity = pallet.length * pallet.width * pallet.maxHeight
   const acceptLoad = (load: PalletLoad) => {
     loads.push(load)
     for (const [boxId, quantity] of placedCounts(load)) {
@@ -288,14 +419,7 @@ export function calculatePallet(pallet: Pallet, boxTypes: BoxType[]): Calculatio
     totalWeight += load.totalWeight
   }
 
-  while ([...remaining.values()].some((quantity) => quantity > 0)) {
-    const volumeLeft = remainingVolume(validBoxes, remaining)
-    const palletsNeeded = Math.ceil(volumeLeft / capacity)
-    const targetVolume = palletsNeeded > 1 ? Math.max(capacity * TARGET_FILL, volumeLeft - (palletsNeeded - 1) * capacity) : undefined
-    const load = bestPallet(pallet, validBoxes, remaining, targetVolume)
-    if (!load.placements.length) break
-    acceptLoad(load)
-  }
+  for (const load of optimiseOrder(pallet, validBoxes, remaining)) acceptLoad(load)
 
   const results: BoxResult[] = validBoxes.map((box) => {
     const placed = placedById.get(box.id) ?? 0
